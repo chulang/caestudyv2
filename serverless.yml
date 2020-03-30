@@ -1,0 +1,115 @@
+service: casestudy
+
+custom:
+  settings:
+    #Please enter your accountid
+    ACCOUNT_ID: "861077500827"
+
+provider:
+  name: aws
+  runtime: nodejs12.x
+  region: ap-southeast-1
+  environment: ${self:custom.settings}
+  
+  #Permission to send message to the queue
+  iamRoleStatements:
+    - Effect: "Allow"
+      Action:
+        - "sqs:SendMessage"
+        - "sqs:GetQueueUrl"
+      Resource: "arn:aws:sqs:${self:provider.region}:*:MyQueue"
+    - Effect: "Allow"
+      Action:
+        - "sqs:ListQueues"
+      Resource: "arn:aws:sqs:${self:provider.region}:861077500827:*"
+  
+  Policies:
+    - Version: '2012-10-17'
+      Statement:
+        - Effect: Allow
+          Action:
+            - 'dynamodb:DeleteItem'
+            - 'dynamodb:GetItem'
+            - 'dynamodb:PutItem'
+            - 'dynamodb:UpdateItem'
+          Resource:
+            'Fn::Join':
+              - ''
+              - - 'arn:aws:dynamodb:'
+                - Ref: 'AWS::Region'
+                - ':'
+                - Ref: 'AWS::AccountId'
+                - ':table/MyTable'
+Parameters:
+  TableName:
+    Type: String
+    Default: 'casestudy'
+    Description: (Required) The name of the new DynamoDB table you want to create and save to. Minimum 3 characters
+    MinLength: 3
+    MaxLength: 50
+    AllowedPattern: ^[A-Za-z]+$
+    
+functions:
+  api1:
+    handler: handler.api1
+    events:
+      - http:
+          method: get
+          path: api1
+          
+  #triggers whenever there is a message in the queue
+  api2:
+    handler: handler.api2
+    events:
+      - sqs:
+          arn:
+            Fn::GetAtt:
+              - MyQueue
+              - Arn
+          batchSize: 1
+
+resources:
+  Resources:
+    MyQueue:
+      Type: "AWS::SQS::Queue"
+      Properties:
+        QueueName: "MyQueue"
+        
+    Myapi:
+      Type: "AWS::Serverless::Function"
+      Properties:
+        Handler: handler.hello
+        Runtime: nodejs10.x
+        CodeUri: .
+        Policies:
+          - DynamoDBCrudPolicy:
+              TableName: !Ref TableName
+        Environment:
+          Variables:
+            TABLE_NAME: !Ref TableName    
+        Events:
+          CreateAPI:
+            Type: Api
+            Properties:
+              Path: /hello
+              Method: POST
+          OtherOperationsAPI:
+            Type: Api
+            Properties:
+              Path: /hello/{itemId}
+              Method: ANY
+    MyDynamoDBTable:
+      Type: "AWS::DynamoDB::Table"
+      Properties:
+        TableName: !Ref TableName
+        AttributeDefinitions:
+          - AttributeName: First name
+            AttributeType: S
+          - AttributeName: Last name
+            AttributeType: S
+        KeySchema:
+          - AttributeName: itemId
+            KeyType: HASH
+        ProvisionedThroughput:
+          ReadCapacityUnit: 1
+          WriteCapacityUnit: 1
